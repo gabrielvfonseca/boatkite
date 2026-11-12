@@ -1,0 +1,45 @@
+# Example Buildkite pipeline for boatkite
+# This pipeline demonstrates running jobs on boat.dev VMs
+
+steps:
+  # Simple Node.js test
+  - label: ":nodejs: Node test"
+    command: |
+      node --version
+      npm install
+      npm test
+    agents:
+      queue: "boat"
+      boat-size: "default"
+
+  # Docker build
+  - label: ":docker: Docker build"
+    command: |
+      docker build -t myapp .
+      docker run --rm myapp echo "Hello from Docker"
+    agents:
+      queue: "boat"
+      boat-size: "large"
+
+  # Docker compose with Postgres
+  - label: ":docker: Docker compose with Postgres"
+    command: |
+      docker compose up -d
+      sleep 5
+      docker compose exec -T postgres pg_isready -U postgres
+      docker compose down
+    agents:
+      queue: "boat"
+      boat-size: "default"
+      boat-snapshot: "boatkite"
+
+  # Custom snapshot
+  - label: ":package: Custom snapshot test"
+    command: |
+      # This job uses a custom snapshot with pre-installed tools
+      python --version
+      pytest tests/
+    agents:
+      queue: "boat"
+      boat-size: "small"
+      boat-snapshot: "python-base"
