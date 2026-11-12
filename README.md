@@ -48,6 +48,41 @@ boatkite run
 
 boatkite will now watch your queue and start VMs for waiting jobs.
 
+## Using in your pipeline
+
+Add the `queue: boat` tag to any step in your Buildkite pipeline. That's it.
+
+```yaml
+steps:
+  - label: ":test: Test"
+    command: npm test
+    agents:
+      queue: "boat"
+```
+
+### Agent tags
+
+| Tag | Values | Description |
+|-----|--------|-------------|
+| `queue` | `boat` (required) | Routes the job to boatkite |
+| `boat-size` | `small`, `default`, `large`, `xlarge` | VM size (default: `default`) |
+| `boat-snapshot` | snapshot name | Custom snapshot (default: your config's `boatSnapshot`) |
+
+### Custom snapshots
+
+The default `boatkite snapshot` comes with `buildkite-agent`, Docker, and a few pre-pulled images. To add your own tools, create a setup script and pass it via env var:
+
+```bash
+BOATKITE_SETUP_SCRIPT=./scripts/agent-setup.sh boatkite snapshot --name my-base
+```
+
+See [`examples/setup-script-example.sh`](examples/setup-script-example.sh) for what the script can do.
+
+### Examples
+
+- [`examples/pipeline-template.yml`](examples/pipeline-template.yml) — minimal copy-paste pipeline
+- [`examples/pipeline.yml`](examples/pipeline.yml) — full example with Docker and custom snapshots
+
 ## Configuration
 
 | Setting | Description | Default |

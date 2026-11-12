@@ -1,0 +1,52 @@
+# Minimal Buildkite pipeline template for boatkite.
+#
+# Copy this into your org's pipeline and adjust the steps.
+# The only required tag is `queue: boat` — everything else is optional.
+#
+# boatkite watches the "boat" queue, picks up each job, creates a fresh
+# boat.dev VM, and starts buildkite-agent inside it to run the job.
+
+steps:
+  # ── Default VM size, default snapshot ──────────────────────────────
+  - label: ":test: Test"
+    command: |
+      node --version
+      npm ci
+      npm test
+    agents:
+      queue: "boat"
+
+  # ── Pick a VM size ─────────────────────────────────────────────────
+  # small  = 1 vCPU / 2 GB
+  # default = 2 vCPU / 4 GB
+  # large  = 4 vCPU / 8 GB
+  # xlarge = 16 vCPU / 32 GB
+  - label: ":hammer: Big build"
+    command: |
+      make build
+    agents:
+      queue: "boat"
+      boat-size: "large"
+
+  # ── Use a custom snapshot ──────────────────────────────────────────
+  # Create one with:  boatkite snapshot --name my-base
+  # Useful when you need tools not in the default snapshot.
+  - label: ":docker: Docker compose stack"
+    command: |
+      docker compose up -d
+      docker compose exec -T app npm test
+      docker compose down
+    agents:
+      queue: "boat"
+      boat-size: "default"
+      boat-snapshot: "my-base"
+
+  # ── Use environment variables from your org/pipeline ───────────────
+  # Normal Buildkite env vars work as usual — the agent picks them up
+  # when it registers.
+  - label: ":package: Deploy"
+    command: ./scripts/deploy.sh
+    env:
+      DEPLOY_ENV: "staging"
+    agents:
+      queue: "boat"
