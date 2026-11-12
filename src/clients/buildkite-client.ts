@@ -2,7 +2,7 @@
  * Buildkite API client interface. Implemented with fetch and a fake for tests.
  */
 
-import type { BuildkiteJob, BuildkiteBuild, BuildkitePipeline, BuildkiteAgent } from "../types.js";
+import type { BuildkiteAgent, BuildkiteBuild, BuildkiteJob, BuildkitePipeline } from "../types.js";
 
 export interface IBuildkiteClient {
   findScheduledJobs(queue: string): Promise<BuildkiteJob[]>;
@@ -16,11 +16,11 @@ export interface IBuildkiteClient {
 }
 
 export class BuildkiteApiError extends Error {
-  constructor(
-    message: string,
-    public status: number
-  ) {
+  status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = "BuildkiteApiError";
+    this.status = status;
   }
 }

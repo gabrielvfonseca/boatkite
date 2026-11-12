@@ -120,7 +120,17 @@ export interface BuildkitePipeline {
 
 export interface BoatkiteConfig {
   boatApiKey: string;
+  /**
+   * Buildkite API token used by the scaler's own REST client
+   * (querying jobs, builds, agents). Never copied into job VMs.
+   */
   buildkiteToken: string;
+  /**
+   * Scoped Buildkite agent token passed into job VMs so the
+   * `buildkite-agent` process can register and acquire jobs.
+   * Should NOT be the scaler's API token.
+   */
+  agentToken: string;
   buildkiteOrg: string;
   queue: string;
   maxVms: number;
@@ -210,9 +220,20 @@ export interface IBoatClient {
   listSandboxes(options?: { namePrefix?: string; state?: SandboxState }): Promise<BoatSandbox[]>;
   deleteSandbox(sandboxId: string): Promise<void>;
   stopSandbox(sandboxId: string): Promise<void>;
-  runCommand(sandboxId: string, command: string, options?: CommandOptions): Promise<CommandResult>;
-  runCommandDetached(sandboxId: string, command: string, options?: CommandOptions): Promise<CommandStarted>;
-  getCommandStatus(sandboxId: string, processId: string): Promise<{ running: boolean; exitCode?: number }>;
+  runCommand(
+    sandboxId: string,
+    command: string,
+    options?: CommandOptions,
+  ): Promise<CommandResult | CommandStarted>;
+  runCommandDetached(
+    sandboxId: string,
+    command: string,
+    options?: CommandOptions,
+  ): Promise<CommandStarted>;
+  getCommandStatus(
+    sandboxId: string,
+    processId: string,
+  ): Promise<{ running: boolean; exitCode?: number }>;
   stopCommand(sandboxId: string, processId: string): Promise<void>;
   getLimits(): Promise<BoatLimits>;
   getUsage(sandboxId: string): Promise<BoatUsage>;

@@ -4,11 +4,11 @@
  */
 
 import { Command } from "commander";
-import { runCommand } from "./commands/run.js";
-import { initCommand } from "./commands/init.js";
-import { statusCommand } from "./commands/status.js";
 import { cleanupCommand } from "./commands/cleanup.js";
+import { initCommand } from "./commands/init.js";
+import { runCommand } from "./commands/run.js";
 import { snapshotCommand } from "./commands/snapshot.js";
+import { statusCommand } from "./commands/status.js";
 
 const program = new Command();
 
@@ -23,10 +23,7 @@ program
   .option("-c, --config <path>", "Config file path")
   .action(runCommand);
 
-program
-  .command("init")
-  .description("Interactive setup")
-  .action(initCommand);
+program.command("init").description("Interactive setup").action(initCommand);
 
 program
   .command("status")

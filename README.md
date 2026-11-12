@@ -1,4 +1,4 @@
-# boatkite
+# Boatkite
 
 **Autoscaler that runs Buildkite jobs on boat.dev VMs.**
 
@@ -27,7 +27,7 @@ boat.dev gives you all of that. boatkite connects the two.
 ### 2. Install
 
 ```bash
-npx boatkite init
+npm link && boatkite init
 ```
 
 This will prompt for your API keys and create a `boatkite.config.json`.
@@ -35,7 +35,7 @@ This will prompt for your API keys and create a `boatkite.config.json`.
 ### 3. Create a snapshot
 
 ```bash
-npx boatkite snapshot
+boatkite snapshot
 ```
 
 This creates a Boat sandbox with `buildkite-agent` and Docker installed, then saves it as a snapshot.
@@ -43,7 +43,7 @@ This creates a Boat sandbox with `buildkite-agent` and Docker installed, then sa
 ### 4. Run
 
 ```bash
-npx boatkite run
+boatkite run
 ```
 
 boatkite will now watch your queue and start VMs for waiting jobs.
@@ -53,7 +53,8 @@ boatkite will now watch your queue and start VMs for waiting jobs.
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `boatApiKey` | Boat API key (boat_...) | Required |
-| `buildkiteToken` | Buildkite API token | Required |
+| `buildkiteToken` | Buildkite API token (scaler's own REST client) | Required |
+| `agentToken` | Buildkite agent token (passed to job VMs) | Required |
 | `buildkiteOrg` | Buildkite organization slug | Required |
 | `queue` | Buildkite queue to watch | `default` |
 | `maxVms` | Maximum concurrent VMs | `5` |
@@ -77,29 +78,10 @@ steps:
       boat-snapshot: "my-base" # custom snapshot
 ```
 
-### Debug Mode
-
-Set `boat-debug: true` to keep a failed job's sandbox for 30 minutes:
-
-```yaml
-steps:
-  - label: "Debug build"
-    command: "make debug"
-    agents:
-      queue: "boat"
-      boat-debug: "true"
-```
-
-Then SSH into the sandbox:
-
-```bash
-boat ssh <sandbox-id>
-```
-
 ## Security
 
 - The Boat API key stays in the scaler only — never copied into job VMs
-- Each VM gets only the Buildkite agent token and job ID
+- Two-token split: `buildkiteToken` (API) is used by the scaler's REST client and never enters job VMs; `agentToken` (scoped agent token) is what each job VM receives so its `buildkite-agent` can register
 - `noEnv: true` is set on all sandboxes — no Boat secrets leak into CI
 - All tokens are masked in logs
 

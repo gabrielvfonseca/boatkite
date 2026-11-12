@@ -8,7 +8,7 @@ export interface BackoffState {
 }
 
 export function computeBackoff(attempt: number, baseMs = 1000, maxMs = 60000): number {
-  const delay = Math.min(maxMs, baseMs * Math.pow(2, attempt));
+  const delay = Math.min(maxMs, baseMs * 2 ** attempt);
   return delay + Math.random() * delay * 0.3; // jitter
 }
 
@@ -21,29 +21,40 @@ export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
         reject(new Error("Aborted"));
         return;
       }
-      signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        reject(new Error("Aborted"));
-      }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(new Error("Aborted"));
+        },
+        { once: true },
+      );
     }
   });
 }
 
 export async function withBackoff<T>(
   fn: () => Promise<T>,
-  options: { maxAttempts?: number; baseMs?: number; maxMs?: number; signal?: AbortSignal } = {}
+  options: {
+    maxAttempts?: number;
+    baseMs?: number;
+    maxMs?: number;
+    signal?: AbortSignal;
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  } = {},
 ): Promise<T> {
-  const { maxAttempts = 6, baseMs = 1000, maxMs = 60000, signal } = options;
+  const { maxAttempts = 6, baseMs = 1000, maxMs = 60000, signal, sleep: sleepFn = sleep } = options;
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
-    } catch (err: any) {
+    } catch (err) {
       lastError = err;
       if (attempt >= maxAttempts - 1) break;
-      if (err?.status === 401 || err?.status === 403 || err?.status === 404) throw err;
+      const status = (err as { status?: number })?.status;
+      if (status === 401 || status === 403 || status === 404) throw err;
       const delay = computeBackoff(attempt, baseMs, maxMs);
-      await sleep(delay, signal);
+      await sleepFn(delay, signal);
     }
   }
   throw lastError;

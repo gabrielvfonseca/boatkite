@@ -3,21 +3,21 @@
  * Watches Buildkite for waiting jobs and runs each on a fresh Boat VM.
  */
 
+import { randomUUID } from "node:crypto";
 import type {
+  BoatSandbox,
+  BoatkiteConfig,
+  BuildkiteJob,
   IBoatClient,
   IBuildkiteClient,
-  BoatkiteConfig,
   JobAssignment,
-  BuildkiteJob,
-  ScalerMetrics,
   JobState,
   SandboxType,
-  BoatSandbox,
+  ScalerMetrics,
 } from "../types.js";
-import { JobTracker } from "./tracker.js";
+import { computeBackoff, sleep, withBackoff } from "./backoff.js";
 import { logger } from "./logger.js";
-import { withBackoff, sleep, computeBackoff } from "./backoff.js";
-import { randomUUID } from "node:crypto";
+import { JobTracker } from "./tracker.js";
 
 export interface ScalerOptions {
   boat: IBoatClient;
@@ -25,6 +25,9 @@ export interface ScalerOptions {
   config: BoatkiteConfig;
   signal?: AbortSignal;
   onMetrics?: (m: ScalerMetrics) => void;
+  /// Injectable sleep, for tests that drive time with a virtual clock.
+  /// Defaults to the real wall-clock sleep.
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 export class Scaler {
@@ -34,7 +37,14 @@ export class Scaler {
   private readonly tracker = new JobTracker();
   private readonly signal?: AbortSignal;
   private readonly onMetrics?: (m: ScalerMetrics) => void;
+  private readonly sleepFn: (ms: number, signal?: AbortSignal) => Promise<void>;
   private running = false;
+  /**
+   * Jobs dispatched by startJob but not yet tracked. Guards the
+   * poll loop against double-starting the same job while the
+   * async startJob call is in flight (before tracker.add).
+   */
+  private readonly pendingJobs = new Set<string>();
   private startFailures = 0;
   private rateLimit429Count = 0;
   private cleanupTimer?: ReturnType<typeof setInterval>;
@@ -45,6 +55,7 @@ export class Scaler {
     this.cfg = options.config;
     this.signal = options.signal;
     this.onMetrics = options.onMetrics;
+    this.sleepFn = options.sleep ?? sleep;
   }
 
   async start(): Promise<void> {
@@ -65,7 +76,7 @@ export class Scaler {
     // Main poll loop
     while (this.running) {
       await this.pollOnce();
-      await sleep(this.cfg.pollIntervalMs, this.signal);
+      await this.sleepFn(this.cfg.pollIntervalMs, this.signal);
     }
   }
 
@@ -113,22 +124,27 @@ export class Scaler {
       jobs = await withBackoff(() => this.buildkite.findScheduledJobs(this.cfg.queue), {
         maxAttempts: 3,
         signal: this.signal,
+        sleep: this.sleepFn,
       });
-    } catch (err: any) {
-      if (err?.status === 429) {
+    } catch (err) {
+      if ((err as { status?: number })?.status === 429) {
         this.rateLimit429Count++;
         const delay = computeBackoff(0, 5000, 30000);
         logger.warn("Buildkite rate limited, backing off", { delayMs: delay });
-        await sleep(delay, this.signal);
+        await this.sleepFn(delay, this.signal);
         return;
       }
       logger.error("Failed to fetch scheduled jobs", { error: String(err) });
-      await sleep(5000, this.signal);
+      await this.sleepFn(5000, this.signal);
       return;
     }
 
+    // Jobs already tracked or currently being started (startJob is async,
+    // so a job may be pending before it reaches the tracker).
+    const known = new Set<string>([...this.tracker.jobIds(), ...this.pendingJobs]);
+
     // Filter out jobs we already have
-    const newJobs = jobs.filter((j) => !this.tracker.has(j.id));
+    const newJobs = jobs.filter((j) => !known.has(j.id));
 
     if (newJobs.length === 0) {
       logger.debug("No new jobs", { queue: this.cfg.queue });
@@ -146,7 +162,11 @@ export class Scaler {
     for (let i = 0; i < toStart; i++) {
       const job = newJobs[i];
       if (!this.running) break;
+      // Mark pending synchronously so the next poll won't double-start.
+      known.add(job.id);
+      this.pendingJobs.add(job.id);
       this.startJob(job).catch((err) => {
+        this.pendingJobs.delete(job.id);
         logger.error("Failed to start job", {
           jobId: job.id,
           error: String(err),
@@ -171,6 +191,7 @@ export class Scaler {
     const existing = await this.boat.listSandboxes({ namePrefix: sandboxName });
     if (existing.length > 0) {
       logger.debug("Sandbox already exists for job", { jobId, sandboxId: existing[0].id });
+      this.pendingJobs.delete(jobId);
       this.tracker.add({
         jobId,
         sandboxId: existing[0].id,
@@ -191,12 +212,14 @@ export class Scaler {
           jobId,
           startsMinute: limits.startsMinuteRemaining,
         });
-        await sleep(computeBackoff(0, 10000, 60000), this.signal);
+        this.pendingJobs.delete(jobId);
+        await this.sleepFn(computeBackoff(0, 10000, 60000), this.signal);
         return;
       }
       if (limits.sandboxesAtOnceRemaining <= 0) {
         logger.warn("Concurrent sandbox limit reached", { jobId });
-        await sleep(30_000, this.signal);
+        this.pendingJobs.delete(jobId);
+        await this.sleepFn(30_000, this.signal);
         return;
       }
     } catch (err) {
@@ -211,6 +234,8 @@ export class Scaler {
       sandboxName,
     });
 
+    // Hoist idempotencyKey so retries reuse the same key.
+    const idempotencyKey = randomUUID();
     try {
       const result = await withBackoff(
         () =>
@@ -224,17 +249,20 @@ export class Scaler {
               jobId,
               pipeline,
               managedBy: "boatkite",
+              source: "boatkite-scaler",
             },
-            idempotencyKey: randomUUID(),
+            idempotencyKey,
           }),
         {
           maxAttempts: 4,
           baseMs: 2000,
           signal: this.signal,
-        }
+          sleep: this.sleepFn,
+        },
       );
 
       const sandboxId = result.sandbox.id;
+      this.pendingJobs.delete(jobId);
 
       this.tracker.add({
         jobId,
@@ -261,22 +289,24 @@ export class Scaler {
         });
         this.cleanupFailedJob(jobId, sandboxId);
       });
-    } catch (err: any) {
-      if (err?.status === 429) {
+    } catch (err) {
+      this.pendingJobs.delete(jobId);
+      const status = (err as { status?: number })?.status;
+      if (status === 429) {
         this.rateLimit429Count++;
         const delay = computeBackoff(0, 5000, 60000);
         logger.warn("Boat rate limited on create", {
           jobId,
-          retryAfter: err.retryAfter,
+          retryAfter: (err as { retryAfter?: number }).retryAfter,
           delayMs: delay,
         });
-        await sleep(delay, this.signal);
+        await this.sleepFn(delay, this.signal);
         return;
       }
       logger.error("Failed to create sandbox", {
         jobId,
         error: String(err),
-        status: err?.status,
+        status,
       });
       this.startFailures++;
     }
@@ -297,7 +327,7 @@ export class Scaler {
       } catch (err) {
         if (attempts > 5) throw err;
       }
-      await sleep(2000, this.signal);
+      await this.sleepFn(2000, this.signal);
       attempts++;
     }
 
@@ -307,14 +337,14 @@ export class Scaler {
       `--token "$BUILDKITE_AGENT_TOKEN"`,
       `--acquire-job "${jobId}"`,
       "--disconnect-after-job",
-      "--tags \"queue=boat\"",
+      '--tags "queue=boat"',
       "--log-format json",
     ].join(" ");
 
     // Run detached so we can monitor
     try {
       const result = await this.boat.runCommandDetached(sandboxId, command, {
-        env: { BUILDKITE_AGENT_TOKEN: this.cfg.buildkiteToken },
+        env: { BUILDKITE_AGENT_TOKEN: this.cfg.agentToken },
       });
 
       // Update tracker
@@ -330,10 +360,9 @@ export class Scaler {
       this.monitorAgent(sandboxId, jobId, pipeline, result.processId ?? "unknown").catch((err) => {
         logger.error("Agent monitoring failed", { jobId, sandboxId, error: String(err) });
       });
-    } catch (err: any) {
-      if (err?.status === 429) {
+    } catch (err) {
+      if ((err as { status?: number })?.status === 429) {
         this.rateLimit429Count++;
-        throw err;
       }
       throw err;
     }
@@ -343,11 +372,11 @@ export class Scaler {
     sandboxId: string,
     jobId: string,
     pipeline: string,
-    processId: string
+    processId: string,
   ): Promise<void> {
     // Poll agent status until done
     while (this.running) {
-      await sleep(10_000, this.signal);
+      await this.sleepFn(10_000, this.signal);
 
       try {
         const status = await this.boat.getCommandStatus(sandboxId, processId);
@@ -401,7 +430,7 @@ export class Scaler {
     jobId: string,
     sandboxId: string,
     pipeline: string,
-    exitCode: number
+    exitCode: number,
   ): Promise<void> {
     logger.info("Job finished", {
       jobId,
@@ -442,39 +471,48 @@ export class Scaler {
     }
   }
 
-  private async cleanupOrphans(): Promise<void> {
+  async cleanupOrphans(): Promise<void> {
     try {
       const sandboxes = await this.boat.listSandboxes({ namePrefix: "bk-" });
       for (const sb of sandboxes) {
         const assignment = this.tracker.getBySandbox(sb.id);
         if (!assignment) {
-          // Unknown sandbox - check if job exists
-          const match = sb.name.match(/^bk-([^-]+)-([a-f0-9-]+)$/);
-          if (match) {
-            const jobId = match[2];
-            try {
-              const job = await this.buildkite.getJob(jobId);
-              if (
-                job.state === "passed" ||
-                job.state === "failed" ||
-                job.state === "canceled" ||
-                job.state === "cancelled" ||
-                job.state === "broken"
-              ) {
-                logger.info("Cleaning up orphan sandbox", {
-                  jobId,
-                  sandboxId: sb.id,
-                  jobState: job.state,
-                });
-                await this.boat.deleteSandbox(sb.id);
-              }
-            } catch {
-              // Job not found, delete sandbox
-              logger.info("Deleting sandbox for unknown job", {
+          // Only manage sandboxes we created ourselves.
+          if (sb.labels?.source !== "boatkite-scaler") continue;
+
+          const jobId = sb.labels?.jobId;
+          if (!jobId) {
+            // Has source label but no jobId — skip, never archive unknowns.
+            logger.warn("Skipping orphan without jobId label", {
+              sandboxId: sb.id,
+              name: sb.name,
+            });
+            continue;
+          }
+
+          try {
+            const job = await this.buildkite.getJob(jobId);
+            if (
+              job.state === "passed" ||
+              job.state === "failed" ||
+              job.state === "canceled" ||
+              job.state === "cancelled" ||
+              job.state === "broken"
+            ) {
+              logger.info("Cleaning up orphan sandbox", {
+                jobId,
                 sandboxId: sb.id,
+                jobState: job.state,
               });
               await this.boat.deleteSandbox(sb.id);
             }
+          } catch {
+            // Job not found (or deleted from Buildkite) — delete the sandbox.
+            logger.info("Deleting sandbox for unknown job", {
+              jobId,
+              sandboxId: sb.id,
+            });
+            await this.boat.deleteSandbox(sb.id);
           }
         } else {
           // Check timeout

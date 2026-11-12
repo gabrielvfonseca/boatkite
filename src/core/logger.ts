@@ -8,7 +8,7 @@ const SECRET_PATTERNS = [
   /boat_[a-zA-Z0-9]+/g,
   /bk_[a-zA-Z0-9]+/g,
   /BUILDKITE_AGENT_TOKEN=[^\s]+/g,
-  /Bearer [a-zA-Z0-9_\-\.]+/g,
+  /Bearer [a-zA-Z0-9_\-.]+/g,
   /sk-[a-zA-Z0-9]+/g,
   /ghp_[a-zA-Z0-9]+/g,
 ];

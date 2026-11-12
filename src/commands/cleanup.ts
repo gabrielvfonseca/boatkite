@@ -4,8 +4,8 @@
 
 import { BoatRestClient } from "../clients/boat-rest.js";
 import { BuildkiteRestClient } from "../clients/buildkite-rest.js";
-import { loadConfig, validateConfig, DEFAULT_CONFIG } from "../util/config.js";
 import { logger } from "../core/logger.js";
+import { DEFAULT_CONFIG, loadConfig, validateConfig } from "../util/config.js";
 
 export async function cleanupCommand(options: { config?: string }): Promise<void> {
   const fileConfig = loadConfig();
@@ -38,8 +38,8 @@ export async function cleanupCommand(options: { config?: string }): Promise<void
           await boat.deleteSandbox(sb.id);
           deleted++;
         }
-      } catch (err: any) {
-        if (err?.status === 404) {
+      } catch (err) {
+        if ((err as { status?: number })?.status === 404) {
           // Job not found, delete sandbox
           logger.info("Deleting sandbox for unknown job", { sandboxId: sb.id });
           await boat.deleteSandbox(sb.id);

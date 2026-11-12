@@ -5,9 +5,9 @@
  */
 
 import { BoatRestClient } from "../clients/boat-rest.js";
-import { loadConfig, validateConfig, DEFAULT_CONFIG } from "../util/config.js";
-import { logger } from "../core/logger.js";
 import { sleep } from "../core/backoff.js";
+import { logger } from "../core/logger.js";
+import { DEFAULT_CONFIG, loadConfig, validateConfig } from "../util/config.js";
 
 export async function snapshotCommand(options: { config?: string; name?: string }): Promise<void> {
   const fileConfig = loadConfig();
@@ -23,7 +23,7 @@ export async function snapshotCommand(options: { config?: string; name?: string 
     const result = await boat.createSandbox({
       type: "default",
       ttlSeconds: 3600,
-      name: `boatkite-snapshot-builder`,
+      name: "boatkite-snapshot-builder",
     });
 
     const sandboxId = result.sandbox.id;
@@ -42,12 +42,16 @@ export async function snapshotCommand(options: { config?: string; name?: string 
 
     // Install buildkite-agent
     logger.info("Installing buildkite-agent...");
-    await boat.runCommand(sandboxId, [
-      "curl -fsSL https://keys.openpgp.org/vks/v1/by-fingerprint/32A37959C25FAE4BDE28A9F3138D395B1B9F0A0E | gpg --dearmor -o /usr/share/keyrings/buildkite-agent-archive-keyring.gpg",
-      "echo 'deb [signed-by=/usr/share/keyrings/buildkite-agent-archive-keyring.gpg] https://apt.buildkite.com/buildkite-agent stable main' > /etc/apt/sources.list.d/buildkite-agent.list",
-      "apt-get update",
-      "apt-get install -y buildkite-agent",
-    ].join(" && "), { timeoutSeconds: 120 });
+    await boat.runCommand(
+      sandboxId,
+      [
+        "curl -fsSL https://keys.openpgp.org/vks/v1/by-fingerprint/32A37959C25FAE4BDE28A9F3138D395B1B9F0A0E | gpg --dearmor -o /usr/share/keyrings/buildkite-agent-archive-keyring.gpg",
+        "echo 'deb [signed-by=/usr/share/keyrings/buildkite-agent-archive-keyring.gpg] https://apt.buildkite.com/buildkite-agent stable main' > /etc/apt/sources.list.d/buildkite-agent.list",
+        "apt-get update",
+        "apt-get install -y buildkite-agent",
+      ].join(" && "),
+      { timeoutSeconds: 120 },
+    );
 
     // Docker extras: pull images and create containers to keep them
     logger.info("Setting up Docker images...");
@@ -55,7 +59,11 @@ export async function snapshotCommand(options: { config?: string; name?: string 
     for (const image of dockerImages) {
       try {
         await boat.runCommand(sandboxId, `docker pull ${image}`, { timeoutSeconds: 60 });
-        await boat.runCommand(sandboxId, `docker create --name keep-${image.replace(/[^a-z0-9]/gi, "-")} ${image}`, { timeoutSeconds: 30 });
+        await boat.runCommand(
+          sandboxId,
+          `docker create --name keep-${image.replace(/[^a-z0-9]/gi, "-")} ${image}`,
+          { timeoutSeconds: 30 },
+        );
         logger.info(`Docker image ready: ${image}`);
       } catch (err) {
         logger.warn(`Failed to pull image ${image}`, { error: String(err) });

@@ -3,15 +3,16 @@
  */
 
 import type {
-  IBoatClient,
+  BoatLimits,
   BoatSandbox,
-  SandboxState,
-  SandboxType,
-  CreateSandboxOptions,
+  BoatUsage,
+  CommandOptions,
   CommandResult,
   CommandStarted,
-  BoatLimits,
-  BoatUsage,
+  CreateSandboxOptions,
+  IBoatClient,
+  SandboxState,
+  SandboxType,
 } from "../types.js";
 import { BoatApiError } from "./boat-client.js";
 
@@ -63,7 +64,9 @@ export class FakeBoatClient implements IBoatClient {
     if (this.sandboxes.size >= this.options.concurrentLimit) {
       throw new BoatApiError("Limit reached", 429, "limit_reached", 30);
     }
-    const id = options.idempotencyKey ? `bx_idem_${options.idempotencyKey.slice(0, 8)}` : this.genId();
+    const id = options.idempotencyKey
+      ? `bx_idem_${options.idempotencyKey.slice(0, 8)}`
+      : this.genId();
     const sandbox: BoatSandbox = {
       id,
       name: options.name ?? `Sandbox ${id}`,
@@ -89,10 +92,13 @@ export class FakeBoatClient implements IBoatClient {
     return s;
   }
 
-  async listSandboxes(options?: { namePrefix?: string; state?: SandboxState }): Promise<BoatSandbox[]> {
+  async listSandboxes(options?: { namePrefix?: string; state?: SandboxState }): Promise<
+    BoatSandbox[]
+  > {
     let result = Array.from(this.sandboxes.values());
     if (options?.namePrefix) {
-      result = result.filter((s) => s.name.startsWith(options.namePrefix!));
+      const prefix = options.namePrefix;
+      result = result.filter((s) => s.name.startsWith(prefix));
     }
     if (options?.state) {
       result = result.filter((s) => s.state === options.state);
@@ -115,10 +121,10 @@ export class FakeBoatClient implements IBoatClient {
   async runCommand(
     sandboxId: string,
     command: string,
-    options?: any
-  ): Promise<CommandResult> {
+    options?: CommandOptions,
+  ): Promise<CommandResult | { processId: string }> {
     if (options?.detached) {
-      return { processId: `proc_${sandboxId}_${Date.now()}` } as any;
+      return { processId: `proc_${sandboxId}_${Date.now()}` };
     }
     return { exitCode: 0, stdout: "ok", stderr: "" };
   }
@@ -126,14 +132,14 @@ export class FakeBoatClient implements IBoatClient {
   async runCommandDetached(
     sandboxId: string,
     command: string,
-    options?: any
+    options?: CommandOptions,
   ): Promise<CommandStarted> {
     return { processId: `proc_${sandboxId}_${Date.now()}` };
   }
 
   async getCommandStatus(
     sandboxId: string,
-    processId: string
+    processId: string,
   ): Promise<{ running: boolean; exitCode?: number }> {
     return { running: false, exitCode: 0 };
   }

@@ -2,15 +2,15 @@
  * Buildkite REST API client.
  */
 
-import type { BuildkiteJob, BuildkiteBuild, BuildkitePipeline, BuildkiteAgent } from "../types.js";
-import { IBuildkiteClient, BuildkiteApiError } from "./buildkite-client.js";
+import type { BuildkiteAgent, BuildkiteBuild, BuildkiteJob, BuildkitePipeline } from "../types.js";
+import { BuildkiteApiError, type IBuildkiteClient } from "./buildkite-client.js";
 
 const BK_API = "https://api.buildkite.com/v2";
 
 export class BuildkiteRestClient implements IBuildkiteClient {
   constructor(
     private token: string,
-    private org: string
+    private org: string,
   ) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -23,7 +23,10 @@ export class BuildkiteRestClient implements IBuildkiteClient {
       },
     });
     if (!res.ok) {
-      throw new BuildkiteApiError(`Buildkite API error: ${res.status} ${res.statusText}`, res.status);
+      throw new BuildkiteApiError(
+        `Buildkite API error: ${res.status} ${res.statusText}`,
+        res.status,
+      );
     }
     return res.json() as T;
   }
@@ -65,7 +68,9 @@ export class BuildkiteRestClient implements IBuildkiteClient {
       }
     `;
     // For now, use REST endpoint for builds
-    const builds = await this.request<any>(`/organizations/${this.org}/builds?state=scheduled`);
+    const builds = await this.request<BuildkiteBuild[]>(
+      `/organizations/${this.org}/builds?state=scheduled`,
+    );
     const jobs: BuildkiteJob[] = [];
     for (const build of builds ?? []) {
       for (const job of build.jobs ?? []) {
@@ -94,10 +99,9 @@ export class BuildkiteRestClient implements IBuildkiteClient {
   }
 
   async getJobLog(jobId: string): Promise<string> {
-    const res = await fetch(
-      `${BK_API}/organizations/${this.org}/jobs/${jobId}/log`,
-      { headers: { Authorization: `Bearer ${this.token}` } }
-    );
+    const res = await fetch(`${BK_API}/organizations/${this.org}/jobs/${jobId}/log`, {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
     if (!res.ok) throw new BuildkiteApiError(`Failed to get job log: ${res.status}`, res.status);
     return res.text();
   }

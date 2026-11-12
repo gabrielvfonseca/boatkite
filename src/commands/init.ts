@@ -2,9 +2,9 @@
  * boatkite init - interactive setup
  */
 
-import * as readline from "node:readline";
-import { writeFileSync, existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import * as readline from "node:readline";
 import { logger } from "../core/logger.js";
 
 export async function initCommand(): Promise<void> {
@@ -19,19 +19,25 @@ export async function initCommand(): Promise<void> {
   logger.info("boatkite init - interactive setup\n");
 
   const boatApiKey = await ask("Boat API key (boat_...): ");
-  const buildkiteToken = await ask("Buildkite API token: ");
+  const buildkiteToken = await ask("Buildkite API token (used by the scaler itself): ");
+  const agentToken = await ask("Buildkite agent token (passed to job VMs, scoped per-queue): ");
   const buildkiteOrg = await ask("Buildkite organization slug: ");
-  const queue = await ask("Buildkite queue name [default]: ") || "default";
-  const maxVms = parseInt(await ask("Max concurrent VMs [5]: ") || "5", 10);
-  const maxJobMinutes = parseInt(await ask("Max job duration in minutes [60]: ") || "60", 10);
-  const boatSnapshot = await ask("Boat snapshot name [boatkite]: ") || "boatkite";
-  const defaultSize = await ask("Default VM size (small/default/large/xlarge) [default]: ") || "default";
+  const queue = (await ask("Buildkite queue name [default]: ")) || "default";
+  const maxVms = Number.parseInt((await ask("Max concurrent VMs [5]: ")) || "5", 10);
+  const maxJobMinutes = Number.parseInt(
+    (await ask("Max job duration in minutes [60]: ")) || "60",
+    10,
+  );
+  const boatSnapshot = (await ask("Boat snapshot name [boatkite]: ")) || "boatkite";
+  const defaultSize =
+    (await ask("Default VM size (small/default/large/xlarge) [default]: ")) || "default";
 
   rl.close();
 
   const config = {
     boatApiKey,
     buildkiteToken,
+    agentToken,
     buildkiteOrg,
     queue,
     maxVms,
@@ -52,6 +58,7 @@ export async function initCommand(): Promise<void> {
   const envContent = [
     `BOATKITE_BOAT_API_KEY=${boatApiKey}`,
     `BOATKITE_BUILDKITE_TOKEN=${buildkiteToken}`,
+    `BOATKITE_AGENT_TOKEN=${agentToken}`,
     `BOATKITE_BUILDKITE_ORG=${buildkiteOrg}`,
     `BOATKITE_QUEUE=${queue}`,
     `BOATKITE_MAX_VMS=${maxVms}`,

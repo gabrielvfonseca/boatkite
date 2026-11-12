@@ -2,11 +2,11 @@
  * boatkite run - runs the scaler
  */
 
-import { Scaler } from "../core/scaler.js";
-import { loadConfig, validateConfig, DEFAULT_CONFIG } from "../util/config.js";
 import { BoatRestClient } from "../clients/boat-rest.js";
 import { BuildkiteRestClient } from "../clients/buildkite-rest.js";
 import { logger } from "../core/logger.js";
+import { Scaler } from "../core/scaler.js";
+import { DEFAULT_CONFIG, loadConfig, validateConfig } from "../util/config.js";
 
 export async function runCommand(options: { config?: string }): Promise<void> {
   const fileConfig = loadConfig();
@@ -15,11 +15,14 @@ export async function runCommand(options: { config?: string }): Promise<void> {
   const boat = new BoatRestClient(config.boatApiKey);
   const buildkite = new BuildkiteRestClient(config.buildkiteToken, config.buildkiteOrg);
 
+  // Persistent abort signal for the lifetime of the process.
+  const abortController = new AbortController();
+
   const scaler = new Scaler({
     boat,
     buildkite,
     config,
-    signal: AbortSignal.timeout(0), // No timeout
+    signal: abortController.signal,
     onMetrics: (m) => {
       logger.debug("Metrics", { ...m });
     },
@@ -28,6 +31,7 @@ export async function runCommand(options: { config?: string }): Promise<void> {
   // Handle shutdown signals
   const shutdown = async () => {
     logger.info("Received shutdown signal");
+    abortController.abort();
     await scaler.stop();
     process.exit(0);
   };

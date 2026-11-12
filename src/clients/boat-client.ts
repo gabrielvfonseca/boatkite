@@ -3,16 +3,16 @@
  */
 
 import type {
+  BoatLimits,
   BoatSandbox,
-  SandboxState,
-  SandboxType,
-  CreateSandboxOptions,
+  BoatUsage,
+  BoatWebhookPayload,
   CommandOptions,
   CommandResult,
   CommandStarted,
-  BoatLimits,
-  BoatUsage,
-  BoatWebhookPayload,
+  CreateSandboxOptions,
+  SandboxState,
+  SandboxType,
 } from "../types.js";
 
 export interface IBoatClient {
@@ -22,8 +22,15 @@ export interface IBoatClient {
   deleteSandbox(sandboxId: string): Promise<void>;
   stopSandbox(sandboxId: string): Promise<void>;
   runCommand(sandboxId: string, command: string, options?: CommandOptions): Promise<CommandResult>;
-  runCommandDetached(sandboxId: string, command: string, options?: CommandOptions): Promise<CommandStarted>;
-  getCommandStatus(sandboxId: string, processId: string): Promise<{ running: boolean; exitCode?: number }>;
+  runCommandDetached(
+    sandboxId: string,
+    command: string,
+    options?: CommandOptions,
+  ): Promise<CommandStarted>;
+  getCommandStatus(
+    sandboxId: string,
+    processId: string,
+  ): Promise<{ running: boolean; exitCode?: number }>;
   stopCommand(sandboxId: string, processId: string): Promise<void>;
   getLimits(): Promise<BoatLimits>;
   getUsage(sandboxId: string): Promise<BoatUsage>;
@@ -33,14 +40,16 @@ export interface IBoatClient {
 }
 
 export class BoatApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public code?: string,
-    public retryAfter?: number
-  ) {
+  status: number;
+  code?: string;
+  retryAfter?: number;
+
+  constructor(message: string, status: number, code?: string, retryAfter?: number) {
     super(message);
     this.name = "BoatApiError";
+    this.status = status;
+    this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 

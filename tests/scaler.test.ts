@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Scaler } from "../src/core/scaler.js";
-import { JobTracker } from "../src/core/tracker.js";
-import type { IBoatClient, IBuildkiteClient, BoatkiteConfig, BuildkiteJob } from "../src/types.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeBoatClient } from "../src/clients/fake-boat.js";
 import { FakeBuildkiteClient } from "../src/clients/fake-buildkite.js";
+import { Scaler } from "../src/core/scaler.js";
+import { JobTracker } from "../src/core/tracker.js";
+import type { BoatkiteConfig, BuildkiteJob, IBoatClient, IBuildkiteClient } from "../src/types.js";
 
 describe("Scaler", () => {
   let boat: FakeBoatClient;

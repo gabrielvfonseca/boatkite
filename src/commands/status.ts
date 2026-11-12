@@ -4,8 +4,8 @@
 
 import { BoatRestClient } from "../clients/boat-rest.js";
 import { BuildkiteRestClient } from "../clients/buildkite-rest.js";
-import { loadConfig, validateConfig, DEFAULT_CONFIG } from "../util/config.js";
 import { logger } from "../core/logger.js";
+import { DEFAULT_CONFIG, loadConfig, validateConfig } from "../util/config.js";
 
 export async function statusCommand(): Promise<void> {
   const fileConfig = loadConfig();
@@ -17,7 +17,7 @@ export async function statusCommand(): Promise<void> {
   try {
     const sandboxes = await boat.listSandboxes({ namePrefix: "bk-" });
     const running = sandboxes.filter((s) =>
-      ["ready", "idle", "running", "provisioning", "provisioned", "cloning"].includes(s.state)
+      ["ready", "idle", "running", "provisioning", "provisioned", "cloning"].includes(s.state),
     );
 
     console.log("\n=== boatkite status ===\n");

@@ -4,16 +4,16 @@
  */
 
 import type {
-  IBoatClient,
+  BoatLimits,
   BoatSandbox,
-  SandboxState,
-  SandboxType,
-  CreateSandboxOptions,
+  BoatUsage,
   CommandOptions,
   CommandResult,
   CommandStarted,
-  BoatLimits,
-  BoatUsage,
+  CreateSandboxOptions,
+  IBoatClient,
+  SandboxState,
+  SandboxType,
 } from "../types.js";
 import { BoatApiError } from "./boat-client.js";
 
@@ -38,12 +38,15 @@ export class BoatRestClient implements IBoatClient {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      const error = body as any;
+      const error = body as { message?: string; code?: string; retryAfter?: number };
       throw new BoatApiError(
         error.message ?? `Boat API error: ${res.status}`,
         res.status,
         error.code,
-        error.retryAfter ?? (res.headers.get("retry-after") ? parseInt(res.headers.get("retry-after")!) : undefined)
+        error.retryAfter ??
+          (res.headers.get("retry-after")
+            ? Number.parseInt(res.headers.get("retry-after") ?? "")
+            : undefined),
       );
     }
 
@@ -79,7 +82,9 @@ export class BoatRestClient implements IBoatClient {
     return result.sandbox;
   }
 
-  async listSandboxes(options?: { namePrefix?: string; state?: SandboxState }): Promise<BoatSandbox[]> {
+  async listSandboxes(options?: { namePrefix?: string; state?: SandboxState }): Promise<
+    BoatSandbox[]
+  > {
     const params = new URLSearchParams();
     if (options?.namePrefix) params.set("namePrefix", options.namePrefix);
     if (options?.state) params.set("state", options.state);
@@ -106,8 +111,8 @@ export class BoatRestClient implements IBoatClient {
   async runCommand(
     sandboxId: string,
     command: string,
-    options?: CommandOptions
-  ): Promise<CommandResult> {
+    options?: CommandOptions,
+  ): Promise<CommandResult | { processId: string }> {
     const body: Record<string, unknown> = { command };
     if (options?.cwd) body.cwd = options.cwd;
     if (options?.timeoutSeconds) body.timeoutSeconds = options.timeoutSeconds;
@@ -115,26 +120,28 @@ export class BoatRestClient implements IBoatClient {
     if (options?.stream) body.stream = options.stream;
     if (options?.env) body.env = options.env;
 
-    const result = await this.request<CommandResult>(`/sandboxes/${sandboxId}/commands`, {
+    const result = (await this.request(`/sandboxes/${sandboxId}/commands`, {
       method: "POST",
       body: JSON.stringify(body),
-    });
-
+    })) as CommandResult | { processId: string };
     return result;
   }
 
   async runCommandDetached(
     sandboxId: string,
     command: string,
-    options?: CommandOptions
+    options?: CommandOptions,
   ): Promise<CommandStarted> {
-    const result = await this.runCommand(sandboxId, command, { ...options, detached: true });
-    return { processId: (result as any).processId };
+    const result = (await this.runCommand(sandboxId, command, {
+      ...options,
+      detached: true,
+    })) as { processId: string };
+    return { processId: result.processId };
   }
 
   async getCommandStatus(
     sandboxId: string,
-    processId: string
+    processId: string,
   ): Promise<{ running: boolean; exitCode?: number }> {
     return this.request(`/sandboxes/${sandboxId}/commands/${processId}`);
   }
@@ -161,7 +168,9 @@ export class BoatRestClient implements IBoatClient {
   }
 
   async getSavedSnapshot(name: string): Promise<{ status: string; snapshotId?: string }> {
-    const result = await this.request<{ snapshot: { status: string; snapshotId?: string } }>(`/saved-snapshots/${name}`);
+    const result = await this.request<{ snapshot: { status: string; snapshotId?: string } }>(
+      `/saved-snapshots/${name}`,
+    );
     return result.snapshot;
   }
 

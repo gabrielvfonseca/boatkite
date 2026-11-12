@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency: release
+
+jobs:
+  version:
+    name: Version PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create version PR
+        uses: changesets/action@v1
+        with:
+          version: npx changeset version
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+          setup-git: git config user.name "github-actions[bot]" && git config user.email "github-actions[bot]@users.noreply.github.com"
+
+  release:
+    name: Release
+    needs: version
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create release
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release.mjs

@@ -3,7 +3,7 @@
  * State can be rebuilt from sandbox names on restart.
  */
 
-import type { JobAssignment, BuildkiteJob } from "../types.js";
+import type { BuildkiteJob, JobAssignment } from "../types.js";
 import { logger } from "./logger.js";
 
 export class JobTracker {
@@ -38,9 +38,13 @@ export class JobTracker {
     return this.assignments.has(jobId);
   }
 
+  jobIds(): Iterable<string> {
+    return this.assignments.keys();
+  }
+
   running(): JobAssignment[] {
     return Array.from(this.assignments.values()).filter(
-      (a) => a.state === "creating" || a.state === "running"
+      (a) => a.state === "creating" || a.state === "running",
     );
   }
 
@@ -53,14 +57,31 @@ export class JobTracker {
   }
 
   async recoverFromSandboxes(
-    sandboxes: Array<{ id: string; name: string }>,
-    getJob: (jobId: string) => Promise<BuildkiteJob | null>
+    sandboxes: Array<{
+      id: string;
+      name: string;
+      labels?: Record<string, string>;
+      type?: string;
+    }>,
+    getJob: (jobId: string) => Promise<BuildkiteJob | null>,
   ): Promise<void> {
     for (const sb of sandboxes) {
-      const match = sb.name.match(/^bk-([^-]+)-([a-f0-9-]+)$/);
-      if (!match) continue;
-      const pipeline = match[1];
-      const jobId = match[2];
+      // Only recover sandboxes we created ourselves.
+      if (sb.labels?.source !== "boatkite-scaler") continue;
+
+      const jobId = sb.labels?.jobId;
+      if (!jobId) {
+        // Has source label but no jobId — skip, never adopt unknowns.
+        logger.warn("Skipping sandbox without jobId label during recovery", {
+          sandboxId: sb.id,
+          name: sb.name,
+        });
+        continue;
+      }
+
+      const pipeline = sb.labels?.pipeline ?? sb.name.replace(/^bk-/, "").replace(`-${jobId}`, "");
+      const size = (sb.type ?? "default") as JobAssignment["size"];
+
       try {
         const job = await getJob(jobId);
         if (job && (job.state === "scheduled" || job.state === "running")) {
@@ -68,8 +89,8 @@ export class JobTracker {
             jobId,
             sandboxId: sb.id,
             pipeline,
-            size: "default",
-            snapshot: "boatkite",
+            size,
+            snapshot: sb.labels?.snapshot ?? "boatkite",
             startedAt: Date.now(),
             state: "running",
           });

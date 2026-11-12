@@ -3,11 +3,12 @@
  */
 
 import type {
-  IBuildkiteClient,
-  BuildkiteJob,
-  BuildkiteBuild,
-  BuildkitePipeline,
   BuildkiteAgent,
+  BuildkiteBuild,
+  BuildkiteJob,
+  BuildkitePipeline,
+  IBuildkiteClient,
+  JobState,
 } from "../types.js";
 import { BuildkiteApiError } from "./buildkite-client.js";
 
@@ -37,7 +38,7 @@ export class FakeBuildkiteClient implements IBuildkiteClient {
   setJobState(jobId: string, state: string): void {
     this.jobStates[jobId] = state;
     const job = this.jobs.find((j) => j.id === jobId);
-    if (job) job.state = state as any;
+    if (job) job.state = state as JobState;
   }
 
   addJob(job: BuildkiteJob): void {
@@ -52,14 +53,14 @@ export class FakeBuildkiteClient implements IBuildkiteClient {
       throw new BuildkiteApiError("API error", 500);
     }
     return this.jobs.filter(
-      (j) => (j.state === "scheduled" || j.state === "blocked") && !this.jobStates[j.id]
+      (j) => (j.state === "scheduled" || j.state === "blocked") && !this.jobStates[j.id],
     );
   }
 
   async getJob(jobId: string): Promise<BuildkiteJob> {
     const job = this.jobs.find((j) => j.id === jobId);
     if (!job) throw new BuildkiteApiError("Not found", 404);
-    return { ...job, state: (this.jobStates[job.id] ?? job.state) as any };
+    return { ...job, state: (this.jobStates[job.id] ?? job.state) as JobState };
   }
 
   async getBuild(buildId: string): Promise<BuildkiteBuild> {
