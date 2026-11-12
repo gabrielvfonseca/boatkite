@@ -21,8 +21,7 @@
     "version": "node scripts/release.mjs"
   },
   "lint-staged": {
-    "*.{js,ts,tsx}": ["biome check --write", "biome format --write"],
-    "*.{json,md,yml,yaml}": ["biome format --write"]
+    "*": ["biome check --write ."]
   },
   "keywords": ["buildkite", "boat", "ci", "autoscaler"],
   "author": "",
